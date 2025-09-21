@@ -91,7 +91,7 @@
         <input type="text" id="keywords" placeholder="e.g. robotic, 'ai robot', autonomy" />
         <small>
           Tips: single word (<code>robotic</code>), phrase with spaces (<code>"ai robot"</code>),
-          or multiple terms separated by commas (we’ll build <code>(term1 OR term2)</code>).
+          or multiple terms separated by commas (we’ll build <code>(term1 OR term2)</code> when a username is used).
         </small>
       </div>
 
@@ -117,7 +117,7 @@
           <button id="removeSelected" class="btn secondary" disabled>Remove Selected</button>
         </div>
         <button id="clearAll" class="btn danger" disabled>Clear All Saved Accounts</button>
-        <small class="muted">Saved in **Firestore** under your user.</small>
+        <small class="muted">Saved in <strong>Firestore</strong> under your user.</small>
       </div>
 
       <!-- Import list -->
@@ -160,7 +160,7 @@ charlie_d
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
   <script>
-   
+    // --------- FIREBASE INIT ---------
     const firebaseConfig = {
       apiKey: "AIzaSyDBEsrU-6-BAbI3Kvy6BgLFz79H9EZVGBI",
       authDomain: "twittersearch-53f72.firebaseapp.com",
@@ -318,7 +318,8 @@ charlie_d
       URL.revokeObjectURL(url);
     }
 
-    // --------- QUERY BUILDING ---------
+    // --------- KEYWORD HELPERS ---------
+    // (Used only when a USERNAME is present to allow comma-separated OR groups)
     function normalizeKeywordGroup(raw) {
       if (!raw) return "";
       const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
@@ -331,14 +332,40 @@ charlie_d
       return normalized.length === 1 ? normalized[0] : `(${normalized.join(" OR ")})`;
     }
 
+    // --------- URL BUILDER ---------
     function buildUrl() {
       const username = normalizeHandle($("username").value);
       const start = $("startDate").value;
       const end = $("endDate").value;
       const rawKeywords = $("keywords").value.trim();
 
-      if (!username || !start || !end) {
-        alert("Please fill in username, start date, and end date.");
+      // A) Username present -> original behavior (dates required)
+      if (username) {
+        if (!start || !end) {
+          alert("Please select start and end dates.");
+          return null;
+        }
+        if (end < start) {
+          alert("End date must be on or after start date.");
+          return null;
+        }
+        const keywordQuery = normalizeKeywordGroup(rawKeywords);
+        const parts = [];
+        if (keywordQuery) parts.push(keywordQuery);
+        parts.push(`(from:${username})`);
+        parts.push(`until:${end}`);
+        parts.push(`since:${start}`);
+        const query = parts.join(" ");
+        return `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query`;
+      }
+
+      // B) Keyword ONLY (no username) -> both single & multi-word REQUIRE dates
+      if (!rawKeywords) {
+        alert("Enter a keyword or select/type a username.");
+        return null;
+      }
+      if (!start || !end) {
+        alert("Please select start and end dates for keyword-only searches.");
         return null;
       }
       if (end < start) {
@@ -346,16 +373,9 @@ charlie_d
         return null;
       }
 
-      const keywordQuery = normalizeKeywordGroup(rawKeywords);
-      const parts = [];
-      if (keywordQuery) parts.push(keywordQuery);
-      parts.push(`(from:${username})`);
-      parts.push(`until:${end}`);
-      parts.push(`since:${start}`);
-
-      const query = parts.join(" ");
-      const encoded = encodeURIComponent(query);
-      return `https://x.com/search?q=${encoded}&src=typed_query`;
+      // For keyword-only, pass the keyword exactly as typed (no extra quoting/grouping)
+      const query = `${rawKeywords} lang:en until:${end} since:${start}`;
+      return `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query`;
     }
 
     // --------- WIRE UP UI ---------
